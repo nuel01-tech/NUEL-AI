@@ -1,9 +1,9 @@
-import json, os, secrets, subprocess, threading, uuid
+import base64, io, json, os, secrets, subprocess, threading, uuid
 from datetime import datetime, timezone
 from pathlib import Path
 from fastapi import FastAPI, Header, HTTPException, Depends
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse\nimport qrcode
 from groq import Groq
 
 DATA_DIR = Path(os.getenv("DATA_DIR", "/tmp/nuel-ai-data"))
@@ -52,6 +52,27 @@ def ai():
 def home(_user: str = Depends(require_dashboard_auth)): return HTMLResponse(PAGE)
 @app.get("/api/health")
 def health(): return {"ok": True, "app": "NUEL-AI", "time": stamp()}
+@app.post("/api/bridge/qr")
+def receive_bridge_qr(payload: dict, x_bridge_token: str | None = Header(default=None)):
+    global latest_qr
+    if not TOKEN or x_bridge_token != TOKEN: raise HTTPException(401, "Webhook authentication failed.")
+    value = str(payload.get("qr") or "")
+    if not value or len(value) > 12000: raise HTTPException(400, "Invalid QR payload.")
+    latest_qr = value
+    return {"ok": True}
+@app.delete("/api/bridge/qr")
+def clear_bridge_qr(x_bridge_token: str | None = Header(default=None)):
+    global latest_qr
+    if not TOKEN or x_bridge_token != TOKEN: raise HTTPException(401, "Webhook authentication failed.")
+    latest_qr = None
+    return {"ok": True}
+@app.get("/api/whatsapp-qr")
+def whatsapp_qr(_user: str = Depends(require_dashboard_auth)):
+    if not latest_qr: return {"available": False}
+    image = qrcode.make(latest_qr)
+    output = io.BytesIO()
+    image.save(output, format="PNG")
+    return {"available": True, "image": "data:image/png;base64," + base64.b64encode(output.getvalue()).decode("ascii")}
 @app.get("/api/bridge-status")
 def bridge_status(_user: str = Depends(require_dashboard_auth)):
     return {"configured": bool(PHONE), "process_running": bridge is not None and bridge.poll() is None}
@@ -123,7 +144,7 @@ PAGE = r"""<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name
 *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:15px/1.5 Inter,system-ui,sans-serif}header{padding:24px 5vw;border-bottom:1px solid var(--line);display:flex;justify-content:space-between}.brand{font-weight:800;letter-spacing:.12em}.brand span{color:var(--blue)}.sub{color:var(--muted);font-size:12px}main{max-width:1180px;margin:auto;padding:32px 4vw 64px}.top,.grid{display:grid;grid-template-columns:1.3fr .7fr;gap:18px;margin-bottom:18px}.grid{grid-template-columns:1fr 1fr}.panel{background:var(--panel);border:1px solid var(--line);padding:22px}h1{font-size:clamp(28px,4vw,42px);line-height:1.08;letter-spacing:-.04em;margin:0 0 10px}h2{font-size:17px;margin:0 0 16px}p{color:var(--muted)}.status{color:var(--muted);font-size:13px;margin-top:16px}.dot{display:inline-block;width:8px;height:8px;border-radius:50%;background:#d9b66d}.dot.ok{background:var(--green)}button{border:1px solid #36516b;background:#1b344b;color:#eaf4ff;padding:10px 14px;cursor:pointer;margin:8px 5px 0 0}button.secondary{background:transparent;border-color:var(--line);color:var(--muted)}.item{padding:16px 0;border-top:1px solid var(--line)}.meta{display:flex;justify-content:space-between;gap:10px;color:var(--muted);font-size:12px;margin-bottom:7px}.sender{font-weight:700;color:var(--text)}.message{white-space:pre-wrap;overflow-wrap:anywhere}.tag{font-size:10px;text-transform:uppercase;color:var(--green);border:1px solid #315b4e;padding:2px 6px}.family{color:#e7c98d;border-color:#65532e}textarea{width:100%;min-height:90px;background:#0d151f;border:1px solid var(--line);color:var(--text);padding:12px;font:inherit}.empty{color:var(--muted);padding:18px 0}.summary{white-space:pre-wrap}@media(max-width:760px){.top,.grid{grid-template-columns:1fr}header{flex-direction:column;gap:8px}}
 </style></head><body><header><div><div class="brand">NUEL<span>·</span>AI</div><div class="sub">WHATSAPP MESSAGE DESK</div></div><div class="sub">AI-assisted. Human-approved.</div></header><main>
 <section class="top"><div class="panel"><h1>Your messages,<br>with more clarity.</h1><p>Review incoming messages, understand the important ones, and prepare replies without giving up control.</p><div class="status"><span id="dot" class="dot"></span> <span id="bridge">Checking WhatsApp…</span></div><button onclick="summarize()">Summarize inbox</button><button class="secondary" onclick="refresh()">Refresh</button></div><div class="panel"><h2>Inbox brief</h2><div id="brief" class="summary">No summary generated yet.</div></div></section>
-<section class="grid"><div class="panel"><h2>Incoming messages</h2><div id="messages" class="empty">Loading…</div></div><div class="panel"><h2>Reply drafts</h2><div id="drafts" class="empty">Loading…</div></div></section><p style="font-size:12px">Messages are sent to Groq only when you request AI features. Family-blocklisted messages are excluded. Draft approval never sends a WhatsApp message.</p></main>
+<section id="qrPanel" class="panel" style="display:none;margin-bottom:18px;text-align:center"><h2>Link WhatsApp with QR code</h2><p>On your phone, open WhatsApp → Linked devices → Link a device, then scan this code using your phone camera inside WhatsApp.</p><img id="qrImage" alt="Temporary WhatsApp linking QR code" style="width:260px;max-width:100%;background:white;padding:10px"><p class="sub">This QR is private to your authenticated dashboard and disappears after connection.</p></section><section class="grid"><div class="panel"><h2>Incoming messages</h2><div id="messages" class="empty">Loading…</div></div><div class="panel"><h2>Reply drafts</h2><div id="drafts" class="empty">Loading…</div></div></section><p style="font-size:12px">Messages are sent to Groq only when you request AI features. Family-blocklisted messages are excluded. Draft approval never sends a WhatsApp message.</p></main>
 <script>
 async function api(u,o){let r=await fetch(u,{headers:{"Content-Type":"application/json"},...o});let d=await r.json();if(!r.ok)throw Error(d.detail||"Request failed");return d}
 function esc(s){return String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]))}
