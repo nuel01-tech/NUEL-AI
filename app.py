@@ -20,6 +20,7 @@ BLOCK_NAMES = [x.strip().lower() for x in os.getenv("FAMILY_BLOCKLIST_NAMES", "M
 BLOCK_NUMBERS = ["".join(c for c in x if c.isdigit()) for x in os.getenv("FAMILY_BLOCKLIST_NUMBERS", "").split(",") if x.strip()]
 lock = threading.RLock()
 bridge = None
+latest_qr = None
 app = FastAPI(title="NUEL-AI", version="1.0.0")
 
 def stamp(): return datetime.now(timezone.utc).isoformat()
