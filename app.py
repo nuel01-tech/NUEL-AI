@@ -1,7 +1,8 @@
-import json, os, subprocess, threading, uuid
+import json, os, secrets, subprocess, threading, uuid
 from datetime import datetime, timezone
 from pathlib import Path
-from fastapi import FastAPI, Header, HTTPException
+from fastapi import FastAPI, Header, HTTPException, Depends
+from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from fastapi.responses import HTMLResponse
 from groq import Groq
 
@@ -10,6 +11,9 @@ DB = DATA_DIR / "inbox.json"
 TOKEN = os.getenv("BRIDGE_WEBHOOK_TOKEN", "")
 PHONE = "".join(c for c in os.getenv("WHATSAPP_PHONE_NUMBER", "") if c.isdigit())
 KEY = os.getenv("GROQ_API_KEY", "")
+DASHBOARD_USERNAME = os.getenv("DASHBOARD_USERNAME", "nuel")
+DASHBOARD_PASSWORD = os.getenv("DASHBOARD_PASSWORD", "")
+security = HTTPBasic()
 MODEL = os.getenv("GROQ_MODEL", "openai/gpt-oss-120b")
 BLOCK_NAMES = [x.strip().lower() for x in os.getenv("FAMILY_BLOCKLIST_NAMES", "Mom,Dad,Auntie").split(",") if x.strip()]
 BLOCK_NUMBERS = ["".join(c for c in x if c.isdigit()) for x in os.getenv("FAMILY_BLOCKLIST_NUMBERS", "").split(",") if x.strip()]
@@ -31,19 +35,28 @@ def save(d):
 def is_family(name, number):
     n = (name or "").lower(); digits = "".join(c for c in (number or "") if c.isdigit())
     return any(x in n for x in BLOCK_NAMES) or any(digits.endswith(x) or x.endswith(digits) for x in BLOCK_NUMBERS if x)
+def require_dashboard_auth(credentials: HTTPBasicCredentials = Depends(security)):
+    if not DASHBOARD_PASSWORD:
+        raise HTTPException(503, "Dashboard access is not configured. Set DASHBOARD_PASSWORD in Render.")
+    valid_user = secrets.compare_digest(credentials.username, DASHBOARD_USERNAME)
+    valid_password = secrets.compare_digest(credentials.password, DASHBOARD_PASSWORD)
+    if not (valid_user and valid_password):
+        raise HTTPException(401, "Invalid dashboard credentials.", headers={"WWW-Authenticate": "Basic"})
+    return credentials.username
+
 def ai():
     if not KEY: raise HTTPException(503, "Add GROQ_API_KEY in Render environment variables.")
     return Groq(api_key=KEY)
 
 @app.get("/", response_class=HTMLResponse)
-def home(): return HTMLResponse(PAGE)
+def home(_user: str = Depends(require_dashboard_auth)): return HTMLResponse(PAGE)
 @app.get("/api/health")
 def health(): return {"ok": True, "app": "NUEL-AI", "time": stamp()}
 @app.get("/api/bridge-status")
-def bridge_status():
+def bridge_status(_user: str = Depends(require_dashboard_auth)):
     return {"configured": bool(PHONE), "process_running": bridge is not None and bridge.poll() is None}
 @app.get("/api/messages")
-def messages():
+def messages(_user: str = Depends(require_dashboard_auth)):
     with lock:
         d = load()
         return {"messages": list(reversed(d["messages"][-200:])), "drafts": list(reversed(d["drafts"][-200:]))}
@@ -60,7 +73,7 @@ def incoming(payload: dict, x_bridge_token: str | None = Header(default=None)):
         d["messages"] = d["messages"][-500:]; save(d)
     return {"ok": True}
 @app.post("/api/messages/{mid}/draft")
-def make_draft(mid: str):
+def make_draft(mid: str, _user: str = Depends(require_dashboard_auth)):
     with lock:
         d = load(); msg = next((m for m in d["messages"] if m["id"] == mid), None)
     if not msg: raise HTTPException(404, "Message not found.")
@@ -73,7 +86,7 @@ def make_draft(mid: str):
         d=load(); d["drafts"].append(draft); d["drafts"]=d["drafts"][-500:]; save(d)
     return {"draft":draft}
 @app.patch("/api/drafts/{did}")
-def update_draft(did: str, payload: dict):
+def update_draft(did: str, payload: dict, _user: str = Depends(require_dashboard_auth)):
     with lock:
         d=load(); item=next((x for x in d["drafts"] if x["id"]==did),None)
         if not item: raise HTTPException(404,"Draft not found.")
@@ -81,7 +94,7 @@ def update_draft(did: str, payload: dict):
         if payload.get("status") in ("pending_review","approved","rejected"): item["status"]=payload["status"]
         save(d); return {"draft":item,"note":"Approval is recorded only; no WhatsApp message is sent."}
 @app.post("/api/summary")
-def summary():
+def summary(_user: str = Depends(require_dashboard_auth)):
     with lock:
         d=load(); msgs=[m for m in d["messages"][-40:] if not m["family"]]
     if not msgs: return {"summary":"No non-family messages to summarize yet."}
