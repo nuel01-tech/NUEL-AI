@@ -12,15 +12,27 @@ async function start() {
   const { version } = await fetchLatestBaileysVersion();
   const sock = makeWASocket({ version, auth: state, logger: pino({level:"warn"}), printQRInTerminal:false, browser:["NUEL-AI","Chrome","1.0.0"], markOnlineOnConnect:false, syncFullHistory:false });
   sock.ev.on("creds.update", saveCreds);
+  let pairingCodeRequested = false;
   sock.ev.on("connection.update", async u => {
-    if (u.connection === "connecting") console.log("[WhatsApp] Connecting…");
+    if (u.connection === "connecting") {
+      console.log("[WhatsApp] Connecting…");
+      if (!state.creds.registered && !pairingCodeRequested) {
+        pairingCodeRequested = true;
+        setTimeout(async () => {
+          if (state.creds.registered) return;
+          try {
+            const code = await sock.requestPairingCode(PHONE);
+            console.log("[WhatsApp] Pairing code:", code);
+            console.log("[WhatsApp] Phone: Linked devices > Link a device > Link with phone number instead.");
+          } catch(e) {
+            pairingCodeRequested = false;
+            console.error("[WhatsApp] Pairing request failed:", e.message);
+          }
+        }, 3000);
+      }
+    }
     if (u.connection === "open") {
       console.log("[WhatsApp] Connected.");
-      if (!state.creds.registered) try {
-        const code = await sock.requestPairingCode(PHONE);
-        console.log("[WhatsApp] Pairing code:", code);
-        console.log("[WhatsApp] Phone: Linked devices > Link a device > Link with phone number instead.");
-      } catch(e) { console.error("[WhatsApp] Pairing request failed:", e.message); }
     }
     if (u.connection === "close") {
       const status = u.lastDisconnect?.error?.output?.statusCode;
