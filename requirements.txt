@@ -1,3 +1,4 @@
 fastapi==0.115.12
 uvicorn[standard]==0.34.2
 groq==0.25.0\nqrcode[pil]==8.2\n
+qrcode[pil]==8.2
