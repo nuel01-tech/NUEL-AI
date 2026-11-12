@@ -12,26 +12,27 @@ async function start() {
   const { version } = await fetchLatestBaileysVersion();
   const sock = makeWASocket({ version, auth: state, logger: pino({level:"warn"}), printQRInTerminal:false, browser:["NUEL-AI","Chrome","1.0.0"], markOnlineOnConnect:false, syncFullHistory:false });
   sock.ev.on("creds.update", saveCreds);
-  let pairingCodeRequested = false;
   sock.ev.on("connection.update", async u => {
-    if (u.connection === "connecting") {
-      console.log("[WhatsApp] Connecting…");
-      if (!state.creds.registered && !pairingCodeRequested) {
-        pairingCodeRequested = true;
-        setTimeout(async () => {
-          if (state.creds.registered) return;
-          try {
-            const code = await sock.requestPairingCode(PHONE);
-            console.log("[WhatsApp] Pairing code:", code);
-            console.log("[WhatsApp] Phone: Linked devices > Link a device > Link with phone number instead.");
-          } catch(e) {
-            pairingCodeRequested = false;
-            console.error("[WhatsApp] Pairing request failed:", e.message);
-          }
-        }, 3000);
+    if (u.connection === "connecting") console.log("[WhatsApp] Connecting…");
+    if (u.qr && !state.creds.registered) {
+      try {
+        const response = await fetch("http://127.0.0.1:10000/api/bridge/qr", {
+          method: "POST",
+          headers: { "content-type": "application/json", "x-bridge-token": TOKEN },
+          body: JSON.stringify({ qr: u.qr })
+        });
+        if (!response.ok) console.error("[WhatsApp] Could not publish QR to dashboard:", response.status);
+      } catch (e) {
+        console.error("[WhatsApp] QR dashboard delivery failed:", e.message);
       }
     }
     if (u.connection === "open") {
+      try {
+        await fetch("http://127.0.0.1:10000/api/bridge/qr", {
+          method: "DELETE",
+          headers: { "x-bridge-token": TOKEN }
+        });
+      } catch {}
       console.log("[WhatsApp] Connected.");
     }
     if (u.connection === "close") {
