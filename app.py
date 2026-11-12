@@ -3,7 +3,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from fastapi import FastAPI, Header, HTTPException, Depends
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
-from fastapi.responses import HTMLResponse\nimport qrcode
+from fastapi.responses import HTMLResponse
+import qrcode
 from groq import Groq
 
 DATA_DIR = Path(os.getenv("DATA_DIR", "/tmp/nuel-ai-data"))
