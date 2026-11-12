@@ -1,6 +1,6 @@
 FROM node:20-bookworm-slim
 ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 PORT=10000 DATA_DIR=/tmp/nuel-ai-data WHATSAPP_AUTH_DIR=/tmp/nuel-ai-auth
-RUN apt-get update && apt-get install -y --no-install-recommends python3 python3-venv ca-certificates && rm -rf /var/lib/apt/lists/* && python3 -m venv /opt/venv
+RUN apt-get update && apt-get install -y --no-install-recommends python3 python3-venv ca-certificates git && rm -rf /var/lib/apt/lists/* && python3 -m venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
 WORKDIR /app
 COPY requirements.txt ./
