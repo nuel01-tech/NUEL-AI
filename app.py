@@ -153,6 +153,6 @@ document.getElementById("drafts").innerHTML=d.drafts.length?d.drafts.map(x=>'<ar
 async function draftMsg(id){try{await api("/api/messages/"+id+"/draft",{method:"POST"});await refresh()}catch(e){alert(e.message)}}
 async function saveDraft(id,status){try{await api("/api/drafts/"+id,{method:"PATCH",body:JSON.stringify({text:document.getElementById("d-"+id).value,status})});await refresh()}catch(e){alert(e.message)}}
 async function summarize(){let b=document.getElementById("brief");b.textContent="Preparing…";try{b.textContent=(await api("/api/summary",{method:"POST"})).summary}catch(e){b.textContent=e.message}}
-async function status(){try{let d=await api("/api/bridge-status");document.getElementById("dot").className="dot "+(d.process_running?"ok":"");document.getElementById("bridge").textContent=d.process_running?"WhatsApp bridge process running":d.configured?"Bridge stopped — check Render logs":"WhatsApp not configured — add WHATSAPP_PHONE_NUMBER in Render"}catch(e){}}
-refresh();status();setInterval(()=>{refresh();status()},15000);
+async function status(){try{let d=await api("/api/bridge-status");document.getElementById("dot").className="dot "+(d.process_running?"ok":"");document.getElementById("bridge").textContent=d.process_running?"WhatsApp bridge process running":d.configured?"Bridge stopped — check Render logs":"WhatsApp not configured — add WHATSAPP_PHONE_NUMBER in Render";let q=await api("/api/whatsapp-qr");document.getElementById("qrPanel").style.display=q.available?"block":"none";if(q.available)document.getElementById("qrImage").src=q.image}catch(e){}}
+refresh();status();setInterval(()=>{refresh();status()},5000);
 </script></body></html>"""
