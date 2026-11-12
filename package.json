@@ -1,0 +1,1 @@
+{"name":"nuel-ai-whatsapp-bridge","version":"1.0.0","private":true,"scripts":{"start:bridge":"node bridge/index.js"},"dependencies":{"@whiskeysockets/baileys":"^6.7.18","pino":"^9.6.0"}}
